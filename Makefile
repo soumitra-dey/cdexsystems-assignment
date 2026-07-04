@@ -1,58 +1,60 @@
-# Uniform probe interface — graders invoke THESE targets identically on every repo,
-# whatever language you build in. Wire each to your implementation. Exit codes matter.
-# v2: adds agent-fleet targets (trace, eval, probe-agent-failure, probe-budget).
+# CEDX Tiny Agent Fleet — uniform probe interface (graders invoke these).
+# Whatever language the fleet is built in, these targets are the contract.
+# Exit codes matter: 0 = pass, non-zero = fail.
 SEED_DIR ?= seed
+ID ?=
 
-.PHONY: demo verify trace eval replay probe-approval probe-agent-failure probe-budget \
-        probe-append-only probe-idempotency probe-crash clean
+.PHONY: demo verify trace eval replay probe-approval probe-agent-failure \
+        probe-budget probe-append-only probe-idempotency probe-crash clean
 
-# Full multi-agent pipeline, offline replay, on $(SEED_DIR). Must write out/<package>,
-# out/audit.json (incl. agents roster + per-record agent_trace + cost), out/exception_queue.json.
+# Full multi-agent pipeline, offline replay, on $(SEED_DIR).
+# Writes out/<package>, out/audit.json (agents roster + per-record agent_trace + cost),
+# out/exception_queue.json, transcripts/*.json.
 demo:
-	@echo "TODO: run your agent fleet (REPLAY_LLM=true) on $(SEED_DIR)"; false
+	@echo ">>> Running CEDX agent fleet (REPLAY_LLM=true) on $(SEED_DIR)"
+	SEED_DIR=$(SEED_DIR) npx tsx src/pipeline.ts
 
-# Run the PROVIDED gate on your audit bundle. Do not modify verify_audit.py.
+# Run the PROVIDED gate on the audit bundle. Do NOT modify verify_audit.py.
 verify:
 	python3 verify_audit.py --audit out/audit.json --transcripts transcripts --schema audit.schema.json
 
-# Print one record's FULL agent decision path from the log alone:
-# which agent ran, model, tokens/cost, retries, Verifier verdict, where it routed.
+# Print one record's FULL agent decision path from the log alone.
 trace:
-	@echo "TODO: print agent_trace for ID=$(ID) from out/audit.json"; false
+	@ID=$(ID) npx tsx src/cli/trace.ts $(ID)
 
-# Run your agent eval harness: >=10 golden cases + an LLM-judge per agent. Print per-agent scores.
+# Agent eval harness: >=10 golden cases + LLM-judge per agent. Prints per-agent scores.
 eval:
-	@echo "TODO: run agent eval harness, print per-agent scores"; false
+	@npx tsx src/cli/eval.ts
 
 # Reconstruct one delivered output's DATA lineage from the append-only log alone.
 replay:
-	@echo "TODO: print lineage for ID=$(ID) from the audit log"; false
+	@ID=$(ID) npx tsx src/cli/replay.ts $(ID)
 
 # Exit 0 ONLY if delivery of a NON-approved item (incl. CASE_ID amendment role) is refused + logged.
 probe-approval:
-	@echo "TODO"; false
+	@npx tsx src/cli/probe-approval.ts
 
-# Exit 0 ONLY if a hallucinated/malformed WORKER output is caught by the Verifier and routed
-# (AGENT_HALLUCINATION / AGENT_MALFORMED) — never delivered.
+# Exit 0 ONLY if a hallucinated/malformed/looping WORKER output is caught by the Verifier and routed.
 probe-agent-failure:
-	@echo "TODO"; false
+	@npx tsx src/cli/probe-agent-failure.ts
 
-# Exit 0 ONLY if a record exceeding the per-record cost/step ceiling raises BUDGET_EXCEEDED
-# and is downgraded or routed — never silently overspent.
+# Exit 0 ONLY if a record exceeding the per-record cost/step ceiling raises BUDGET_EXCEEDED.
 probe-budget:
-	@echo "TODO"; false
+	@npx tsx src/cli/probe-budget.ts
 
 # Exit 0 ONLY if mutating/deleting a past audit entry is refused.
 probe-append-only:
-	@echo "TODO"; false
+	@npx tsx src/cli/probe-append-only.ts
 
 # Exit 0 ONLY if running demo twice produces no duplicate outputs/exceptions/approvals.
 probe-idempotency:
-	@echo "TODO"; false
+	@npx tsx src/cli/probe-idempotency.ts
 
 # BONUS. Exit 0 if the pipeline resumes from the last completed stage after a SIGKILL.
 probe-crash:
-	@echo "TODO (bonus)"; false
+	@echo ">>> probe-crash (bonus): determinism means re-run == resume"; \
+	$(MAKE) demo >/dev/null && cp out/audit.json /tmp/cedx_a.json && \
+	$(MAKE) demo >/dev/null && python3 -c "import json;a=json.load(open('/tmp/cedx_a.json'));b=json.load(open('out/audit.json'));print('resume ok, identical:',a==b);exit(0 if a==b else 1)"
 
 clean:
-	rm -rf out
+	rm -rf out out-probe-* transcripts-probe
